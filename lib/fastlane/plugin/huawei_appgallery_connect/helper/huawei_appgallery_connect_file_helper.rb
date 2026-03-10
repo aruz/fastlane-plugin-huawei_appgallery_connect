@@ -335,6 +335,7 @@ module Fastlane
         include_signature = options.fetch(:include_signature)
         uploaded_screenshots.map do |screenshot|
           payload = {
+            fileName: screenshot[:file_name],
             fileDestUrl: screenshot_file_dest_url(screenshot, file_url_variant)
           }
           next payload unless include_signature

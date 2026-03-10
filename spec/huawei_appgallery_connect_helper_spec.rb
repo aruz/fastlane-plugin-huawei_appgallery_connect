@@ -160,8 +160,8 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
       expect(JSON.parse(request.body)).to eq(
         "fileType" => 2,
         "files" => [
-          { "fileDestUrl" => "object-1" },
-          { "fileDestUrl" => "object-2" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "object-1" },
+          { "fileName" => "02-details.png", "fileDestUrl" => "object-2" }
         ],
         "lang" => "en-US",
         "imgShowType" => 0,
@@ -227,9 +227,9 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "object-01" },
-          { "fileDestUrl" => "object-02" },
-          { "fileDestUrl" => "object-10" }
+          { "fileName" => "01-first.png", "fileDestUrl" => "object-01" },
+          { "fileName" => "02-middle.png", "fileDestUrl" => "object-02" },
+          { "fileName" => "10-last.png", "fileDestUrl" => "object-10" }
         ]
       )
 
@@ -269,7 +269,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
         ]
       )
 
@@ -305,7 +305,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     failing_register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
         ]
       )
 
@@ -314,7 +314,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     succeeding_register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/8/appAttachtemp/20260310/appAttach/example.png" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/8/appAttachtemp/20260310/appAttach/example.png" }
         ]
       )
 
@@ -352,7 +352,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     failing_object_id_register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
         ]
       )
 
@@ -361,7 +361,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     failing_raw_url_register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/8/appAttachtemp/20260310/appAttach/example.png" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/8/appAttachtemp/20260310/appAttach/example.png" }
         ]
       )
 
@@ -370,7 +370,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     succeeding_disposable_url_register_http = http_client do |request|
       expect(JSON.parse(request.body)).to include(
         "files" => [
-          { "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/getDisposableFile/example-token" }
+          { "fileName" => "01-home.png", "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/getDisposableFile/example-token" }
         ]
       )
 
