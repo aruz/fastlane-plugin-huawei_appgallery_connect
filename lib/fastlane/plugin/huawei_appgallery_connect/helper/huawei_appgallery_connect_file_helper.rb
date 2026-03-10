@@ -8,6 +8,7 @@ module Fastlane
   UI = FastlaneCore::UI unless Fastlane.const_defined?("UI")
 
   module Helper
+    # rubocop:disable Metrics/ClassLength
     class HuaweiAppgalleryConnectFileHelper
       DEFAULT_METADATA_PATH = "fastlane/metadata/huawei"
       SCREENSHOT_DIRECTORY_NAME = "screenshots"
@@ -106,13 +107,11 @@ module Fastlane
           build_screenshot_file_payload(path, upload_result)
         end
 
-        save_app_file_info(
+        save_screenshot_file_info(
           token,
           params[:client_id],
           params[:app_id],
-          SCREENSHOT_FILE_TYPE,
           uploaded_files,
-          "Cannot upload screenshot info",
           "Successfully uploaded #{uploaded_files.length} screenshot(s) for #{lang}",
           lang
         )
@@ -298,7 +297,85 @@ module Fastlane
         payload
       end
 
+      def self.save_screenshot_file_info(token, client_id, app_id, files, success_message, lang)
+        screenshot_payload_variants(files).each_with_index do |variant_files, index|
+          variant_name = screenshot_payload_variant_name(index)
+          result = save_app_file_info_request(token, client_id, app_id, SCREENSHOT_FILE_TYPE, variant_files, lang)
+
+          if result[:http_error]
+            UI.user_error!("Cannot upload screenshot info (status code: #{result[:response].code}, body: #{result[:response].body})")
+          end
+
+          if result[:success]
+            UI.success(success_message)
+            return result[:result_json]
+          end
+
+          if result[:ret_code] == 204_144_641
+            UI.important("Screenshot registration variant #{variant_name} failed signature verification, trying next payload variant")
+            next
+          end
+
+          UI.user_error!("Cannot upload screenshot info: #{result[:result_json]}")
+        end
+
+        UI.user_error!("Cannot upload screenshot info: Huawei rejected all screenshot signature payload variants")
+      end
+
+      def self.screenshot_payload_variants(files)
+        [
+          files,
+          files.map { |file| with_signature_keys(file, ["imageResolutionSingature", "imageResolutionSignature"]) },
+          files.map { |file| with_signature_keys(file, ["imageResolutionSignature"]) },
+          files.map { |file| without_signature_keys(file) }
+        ]
+      end
+
+      def self.screenshot_payload_variant_name(index)
+        case index
+        when 0
+          "typoed_signature_only"
+        when 1
+          "both_signature_keys"
+        when 2
+          "corrected_signature_only"
+        else
+          "no_signature_keys"
+        end
+      end
+
+      def self.with_signature_keys(file, keys)
+        signature_value = file[:imageResolutionSingature] || file[:imageResolutionSignature]
+        return file unless signature_value
+
+        updated_file = without_signature_keys(file)
+        keys.each do |key|
+          updated_file[key.to_sym] = signature_value
+        end
+        updated_file
+      end
+
+      def self.without_signature_keys(file)
+        file.reject do |key, _value|
+          key == :imageResolutionSingature || key == :imageResolutionSignature
+        end
+      end
+
       def self.save_app_file_info(token, client_id, app_id, file_type, files, failure_message, success_message, lang = nil)
+        result = save_app_file_info_request(token, client_id, app_id, file_type, files, lang)
+        if result[:http_error]
+          UI.user_error!("#{failure_message} (status code: #{result[:response].code}, body: #{result[:response].body})")
+        end
+
+        if result[:success]
+          UI.success(success_message)
+          result[:result_json]
+        else
+          UI.user_error!("#{failure_message}: #{result[:result_json]}")
+        end
+      end
+
+      def self.save_app_file_info_request(token, client_id, app_id, file_type, files, lang = nil)
         uri = URI.parse("https://connect-api.cloud.huawei.com/api/publish/v2/app-file-info?appId=#{app_id}")
         http = build_http_client(uri)
         request = Net::HTTP::Put.new(uri.request_uri)
@@ -312,17 +389,16 @@ module Fastlane
         UI.important("App file info request body: #{request.body}")
 
         response = http.request(request)
-        unless response.kind_of?(Net::HTTPSuccess)
-          UI.user_error!("#{failure_message} (status code: #{response.code}, body: #{response.body})")
-        end
+        return { http_error: true, response: response } unless response.kind_of?(Net::HTTPSuccess)
 
         result_json = JSON.parse(response.body)
-        if result_json["ret"]["code"] == 0
-          UI.success(success_message)
-          result_json
-        else
-          UI.user_error!("#{failure_message}: #{result_json}")
-        end
+        {
+          http_error: false,
+          response: response,
+          result_json: result_json,
+          ret_code: result_json["ret"]["code"],
+          success: result_json["ret"]["code"] == 0
+        }
       end
 
       def self.build_http_client(uri)
@@ -331,5 +407,6 @@ module Fastlane
         http
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end

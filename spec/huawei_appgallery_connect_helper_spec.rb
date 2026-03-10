@@ -137,6 +137,57 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     expect(request_order).to eq([:upload_url, :upload, :register])
   end
 
+  it "retries screenshot registration with alternate signature payloads when Huawei rejects the first one" do
+    screenshot_path = File.join(metadata_path, "en-US", "screenshots", "01.png")
+    write_file(screenshot_path, "png-data")
+
+    register_payloads = []
+
+    upload_url_http = http_client do |_request|
+      http_response(body: { uploadUrl: "https://upload.example.com/files", authCode: "auth-1" }.to_json)
+    end
+
+    upload_http = http_client do |_request|
+      http_response(
+        body: {
+          result: {
+            UploadFileRsp: {
+              fileInfoList: [{
+                fileDestUlr: "screenshots/01.png",
+                size: 8,
+                imageResolution: "1080x1920",
+                imageResolutionSingature: "sig-1"
+              }]
+            }
+          }
+        }.to_json
+      )
+    end
+
+    failing_register_http = http_client do |request|
+      register_payloads << JSON.parse(request.body)
+      http_response(body: { ret: { code: 204_144_641, msg: "Failed to verifySignature" } }.to_json)
+    end
+
+    succeeding_register_http = http_client do |request|
+      register_payloads << JSON.parse(request.body)
+      http_response(body: { ret: { code: 0 } }.to_json)
+    end
+
+    expect(Net::HTTP).to receive(:new).exactly(4).times.and_return(
+      upload_url_http,
+      upload_http,
+      failing_register_http,
+      succeeding_register_http
+    )
+
+    described_class.update_app_localization_info(token, params)
+
+    expect(register_payloads.length).to eq(2)
+    expect(register_payloads[0]["files"][0].keys).to contain_exactly("fileName", "fileDestUrl", "size", "imageResolution", "imageResolutionSingature")
+    expect(register_payloads[1]["files"][0].keys).to contain_exactly("fileName", "fileDestUrl", "size", "imageResolution", "imageResolutionSingature", "imageResolutionSignature")
+  end
+
   it "preserves lexicographic screenshot order when registering files" do
     write_file(File.join(metadata_path, "en-US", "screenshots", "10.png"), "ten")
     write_file(File.join(metadata_path, "en-US", "screenshots", "02.png"), "two")
