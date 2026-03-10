@@ -284,6 +284,52 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     described_class.update_app_localization_info(token, params)
   end
 
+  it "retries screenshot registration with the raw Huawei file URL when the normalized object id is rejected" do
+    screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
+    write_file(File.join(screenshot_directory, "01-home.png"), "png-one")
+    allow(Fastlane::UI).to receive(:important)
+
+    upload_url_http = http_client do |_request|
+      upload_url_response(
+        upload_url: "https://upload.example.com/files/1",
+        auth_code: "auth-1"
+      )
+    end
+    upload_http = http_client do |_request|
+      upload_file_response(
+        image_resolution: "1080*1920",
+        file_dest_url: "https://developerfile-drru.op.hicloud.com/FileServer/getFile/8/appAttachtemp/20260310/appAttach/example.png"
+      )
+    end
+    failing_register_http = http_client do |request|
+      expect(JSON.parse(request.body)).to include(
+        "files" => [
+          { "fileDestUrl" => "8/appAttachtemp/20260310/appAttach/example.png" }
+        ]
+      )
+
+      http_response(body: { ret: { code: 204_144_641, msg: "file url is invalidate" } }.to_json)
+    end
+    succeeding_register_http = http_client do |request|
+      expect(JSON.parse(request.body)).to include(
+        "files" => [
+          { "fileDestUrl" => "https://developerfile-drru.op.hicloud.com/FileServer/getFile/8/appAttachtemp/20260310/appAttach/example.png" }
+        ]
+      )
+
+      success_response
+    end
+
+    expect(Net::HTTP).to receive(:new).exactly(4).times.and_return(
+      upload_url_http,
+      upload_http,
+      failing_register_http,
+      succeeding_register_http
+    )
+
+    described_class.update_app_localization_info(token, params)
+  end
+
   it "still updates text metadata when a locale also contains screenshots" do
     locale_path = File.join(metadata_path, "en-US")
     write_file(File.join(locale_path, "app_name"), "Example App")

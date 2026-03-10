@@ -108,17 +108,16 @@ module Fastlane
           build_screenshot_upload_result(path, upload_result)
         end
 
-        save_app_file_info(
+        save_screenshot_file_info(
           token,
           params[:client_id],
           params[:app_id],
-          SCREENSHOT_FILE_TYPE,
-          build_screenshot_file_payloads(uploaded_screenshots),
-          "Cannot upload screenshot info",
+          uploaded_screenshots,
           "Successfully uploaded #{uploaded_screenshots.length} screenshot(s) for #{lang}",
-          lang: lang,
-          imgShowType: infer_img_show_type!(lang, uploaded_screenshots),
-          deviceType: MOBILE_PHONE_DEVICE_TYPE
+          {
+            lang: lang,
+            img_show_type: infer_img_show_type!(lang, uploaded_screenshots)
+          }
         )
       end
 
@@ -264,15 +263,18 @@ module Fastlane
 
         UI.important("Upload file response payload: #{upload_info}")
 
+        raw_file_dest_url = upload_info["fileDestUrl"] || upload_info["fileDestUlr"] || upload_target[:file_dest_url]
         file_dest_url = upload_target[:file_dest_url] ||
-                        normalize_file_dest_url(upload_info["fileDestUrl"] || upload_info["fileDestUlr"])
+                        normalize_file_dest_url(raw_file_dest_url)
         if file_dest_url.nil?
           UI.user_error!("Cannot determine uploaded file object ID: #{response.body}")
         end
 
         {
           file_dest_url: file_dest_url,
-          image_resolution: upload_info["imageResolution"]
+          raw_file_dest_url: raw_file_dest_url,
+          image_resolution: upload_info["imageResolution"],
+          image_resolution_signature: upload_info["imageResolutionSingature"] || upload_info["imageResolutionSignature"]
         }
       end
 
@@ -320,15 +322,26 @@ module Fastlane
         {
           file_name: File.basename(file_path),
           file_dest_url: upload_result[:file_dest_url],
-          image_resolution: upload_result[:image_resolution]
+          raw_file_dest_url: upload_result[:raw_file_dest_url],
+          image_resolution: upload_result[:image_resolution],
+          image_resolution_signature: upload_result[:image_resolution_signature]
         }
       end
 
-      def self.build_screenshot_file_payloads(uploaded_screenshots)
+      def self.build_screenshot_file_payloads(uploaded_screenshots, options)
+        file_url_variant = options.fetch(:file_url_variant)
+        include_signature = options.fetch(:include_signature)
         uploaded_screenshots.map do |screenshot|
-          {
-            fileDestUrl: screenshot[:file_dest_url]
+          payload = {
+            fileDestUrl: screenshot_file_dest_url(screenshot, file_url_variant)
           }
+          next payload unless include_signature
+
+          payload[:imageResolution] = screenshot[:image_resolution] if screenshot[:image_resolution]
+          if screenshot[:image_resolution_signature]
+            payload[:imageResolutionSingature] = screenshot[:image_resolution_signature]
+          end
+          payload
         end
       end
 
@@ -349,6 +362,32 @@ module Fastlane
         path = uri.path.to_s
         normalized_value = path.sub(%r{\A/FileServer/getFile/}, "")
         normalized_value.empty? ? value : normalized_value
+      end
+
+      def self.screenshot_file_dest_url(screenshot, file_url_variant)
+        case file_url_variant
+        when :raw_url
+          screenshot[:raw_file_dest_url] || screenshot[:file_dest_url]
+        else
+          screenshot[:file_dest_url]
+        end
+      end
+
+      def self.screenshot_payload_variants(uploaded_screenshots)
+        [
+          { name: "object_id_basic", file_url_variant: :object_id, include_signature: false },
+          { name: "raw_url_basic", file_url_variant: :raw_url, include_signature: false },
+          { name: "raw_url_with_signature", file_url_variant: :raw_url, include_signature: true },
+          { name: "object_id_with_signature", file_url_variant: :object_id, include_signature: true }
+        ].map do |variant|
+          variant.merge(files: build_screenshot_file_payloads(
+            uploaded_screenshots,
+            {
+              file_url_variant: variant[:file_url_variant],
+              include_signature: variant[:include_signature]
+            }
+          ))
+        end
       end
 
       def self.infer_img_show_type!(lang, uploaded_screenshots)
@@ -376,6 +415,66 @@ module Fastlane
       end
 
       def self.save_app_file_info(token, client_id, app_id, file_type, files, failure_message, success_message, **additional_body)
+        result = save_app_file_info_request(token, client_id, app_id, file_type, files, **additional_body)
+        if result[:http_error]
+          UI.user_error!("#{failure_message} (status code: #{result[:response].code}, body: #{result[:response].body})")
+        end
+
+        if result[:success]
+          UI.success(success_message)
+          result[:result_json]
+        else
+          UI.user_error!("#{failure_message}: #{result[:result_json]}")
+        end
+      end
+
+      def self.save_screenshot_file_info(token, client_id, app_id, uploaded_screenshots, success_message, options)
+        lang = options.fetch(:lang)
+        img_show_type = options.fetch(:img_show_type)
+        screenshot_payload_variants(uploaded_screenshots).each do |variant|
+          result = save_app_file_info_request(
+            token,
+            client_id,
+            app_id,
+            SCREENSHOT_FILE_TYPE,
+            variant[:files],
+            lang: lang,
+            imgShowType: img_show_type,
+            deviceType: MOBILE_PHONE_DEVICE_TYPE
+          )
+
+          if result[:http_error]
+            UI.user_error!("Cannot upload screenshot info (status code: #{result[:response].code}, body: #{result[:response].body})")
+          end
+
+          if result[:success]
+            UI.success(success_message)
+            return result[:result_json]
+          end
+
+          if retryable_screenshot_payload_error?(result[:result_json])
+            UI.important("Screenshot registration variant #{variant[:name]} failed with #{result[:result_json].dig('ret', 'msg')}, trying next payload variant")
+            next
+          end
+
+          UI.user_error!("Cannot upload screenshot info: #{result[:result_json]}")
+        end
+
+        UI.user_error!("Cannot upload screenshot info: Huawei rejected all screenshot file url payload variants")
+      end
+
+      def self.retryable_screenshot_payload_error?(result_json)
+        return false if result_json.nil?
+
+        ret_code = result_json.dig("ret", "code")
+        ret_msg = result_json.dig("ret", "msg").to_s
+        ret_code == 204_144_641 ||
+          ret_msg.include?("file url is invalidate") ||
+          ret_msg.include?("verifySignature") ||
+          ret_msg.include?("data type is invalid")
+      end
+
+      def self.save_app_file_info_request(token, client_id, app_id, file_type, files, **additional_body)
         uri = URI.parse("https://connect-api.cloud.huawei.com/api/publish/v2/app-file-info?appId=#{app_id}")
         http = build_http_client(uri)
         request = Net::HTTP::Put.new(uri.request_uri)
@@ -388,17 +487,15 @@ module Fastlane
         UI.important("App file info request body: #{request.body}")
 
         response = http.request(request)
-        unless response.kind_of?(Net::HTTPSuccess)
-          UI.user_error!("#{failure_message} (status code: #{response.code}, body: #{response.body})")
-        end
+        return { http_error: true, response: response } unless response.kind_of?(Net::HTTPSuccess)
 
         result_json = JSON.parse(response.body)
-        if result_json["ret"]["code"] == 0
-          UI.success(success_message)
-          result_json
-        else
-          UI.user_error!("#{failure_message}: #{result_json}")
-        end
+        {
+          http_error: false,
+          response: response,
+          result_json: result_json,
+          success: result_json.dig("ret", "code") == 0
+        }
       end
 
       def self.build_http_client(uri)
