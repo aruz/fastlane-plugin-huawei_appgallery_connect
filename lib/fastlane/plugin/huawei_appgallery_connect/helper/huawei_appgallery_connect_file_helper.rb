@@ -273,6 +273,7 @@ module Fastlane
         {
           file_dest_url: file_dest_url,
           raw_file_dest_url: raw_file_dest_url,
+          disposable_url: upload_info["disposableURL"],
           image_resolution: upload_info["imageResolution"],
           image_resolution_signature: upload_info["imageResolutionSingature"] || upload_info["imageResolutionSignature"]
         }
@@ -323,6 +324,7 @@ module Fastlane
           file_name: File.basename(file_path),
           file_dest_url: upload_result[:file_dest_url],
           raw_file_dest_url: upload_result[:raw_file_dest_url],
+          disposable_url: upload_result[:disposable_url],
           image_resolution: upload_result[:image_resolution],
           image_resolution_signature: upload_result[:image_resolution_signature]
         }
@@ -366,6 +368,8 @@ module Fastlane
 
       def self.screenshot_file_dest_url(screenshot, file_url_variant)
         case file_url_variant
+        when :disposable_url
+          screenshot[:disposable_url] || screenshot[:raw_file_dest_url] || screenshot[:file_dest_url]
         when :raw_url
           screenshot[:raw_file_dest_url] || screenshot[:file_dest_url]
         else
@@ -377,7 +381,9 @@ module Fastlane
         [
           { name: "object_id_basic", file_url_variant: :object_id, include_signature: false },
           { name: "raw_url_basic", file_url_variant: :raw_url, include_signature: false },
+          { name: "disposable_url_basic", file_url_variant: :disposable_url, include_signature: false },
           { name: "raw_url_with_signature", file_url_variant: :raw_url, include_signature: true },
+          { name: "disposable_url_with_signature", file_url_variant: :disposable_url, include_signature: true },
           { name: "object_id_with_signature", file_url_variant: :object_id, include_signature: true }
         ].map do |variant|
           variant.merge(files: build_screenshot_file_payloads(
