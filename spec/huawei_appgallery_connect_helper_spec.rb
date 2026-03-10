@@ -90,6 +90,8 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
       expect(request.body).to include("name=\"authCode\"")
       expect(request.body).to include("auth-1")
       expect(request.body).to include("name=\"fileCount\"")
+      expect(request.body).to include("name=\"name\"")
+      expect(request.body).to include("01.png")
       expect(request.body).to include("name=\"parseType\"")
       expect(request.body).to include("filename=\"01.png\"")
 
@@ -122,7 +124,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
         "fileDestUrl" => "screenshots/01.png",
         "size" => "8",
         "imageResolution" => "1080x1920",
-        "imageResolutionSignature" => "sig-1"
+        "imageResolutionSingature" => "sig-1"
       }])
 
       http_response(body: { ret: { code: 0 } }.to_json)

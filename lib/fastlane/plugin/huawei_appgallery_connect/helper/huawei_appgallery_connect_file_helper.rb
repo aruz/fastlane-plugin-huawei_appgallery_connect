@@ -238,6 +238,8 @@ module Fastlane
           UI.user_error!("Cannot parse uploaded file response: #{response.body}")
         end
 
+        UI.important("Upload file response payload: #{upload_info}")
+
         upload_info
       end
 
@@ -246,6 +248,7 @@ module Fastlane
         body.force_encoding("ASCII-8BIT")
         append_multipart_field(body, boundary, "authCode", auth_code)
         append_multipart_field(body, boundary, "fileCount", "1")
+        append_multipart_field(body, boundary, "name", File.basename(file_path))
         append_multipart_field(body, boundary, "parseType", parse_type.to_s) unless parse_type.nil?
         append_multipart_file(body, boundary, "file", file_path, mime_type_for(file_path))
         body << "--#{boundary}--\r\n"
@@ -290,7 +293,7 @@ module Fastlane
         payload[:imageResolution] = upload_result["imageResolution"] if upload_result.key?("imageResolution")
 
         image_resolution_signature = upload_result["imageResolutionSignature"] || upload_result["imageResolutionSingature"]
-        payload[:imageResolutionSignature] = image_resolution_signature unless image_resolution_signature.nil?
+        payload[:imageResolutionSingature] = image_resolution_signature unless image_resolution_signature.nil?
 
         payload
       end
