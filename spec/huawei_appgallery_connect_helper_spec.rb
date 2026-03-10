@@ -41,6 +41,11 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     File.binwrite(path, contents)
   end
 
+  def allow_mobile_screenshot_validation_bypass
+    allow(Fastlane::Helper::HuaweiAppgalleryConnectFileHelper).to receive(:validate_mobile_phone_screenshot_count!)
+    allow(Fastlane::Helper::HuaweiAppgalleryConnectFileHelper).to receive(:validate_mobile_phone_screenshot_sizes!)
+  end
+
   def success_response
     http_response(body: { ret: { code: 0 } }.to_json)
   end
@@ -105,6 +110,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
     write_file(File.join(screenshot_directory, "01-home.png"), "png-one")
     write_file(File.join(screenshot_directory, "02-details.png"), "png-two")
+    allow_mobile_screenshot_validation_bypass
     allow(Fastlane::UI).to receive(:important)
 
     events = []
@@ -252,6 +258,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
   it "derives screenshot fileDestUrl object ids from Huawei file URLs" do
     screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
     write_file(File.join(screenshot_directory, "01-home.png"), "png-one")
+    allow_mobile_screenshot_validation_bypass
     allow(Fastlane::UI).to receive(:important)
 
     upload_url_http = http_client do |_request|
@@ -288,6 +295,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
   it "retries screenshot registration with the raw Huawei file URL when the normalized object id is rejected" do
     screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
     write_file(File.join(screenshot_directory, "01-home.png"), "png-one")
+    allow_mobile_screenshot_validation_bypass
     allow(Fastlane::UI).to receive(:important)
 
     upload_url_http = http_client do |_request|
@@ -334,6 +342,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
   it "retries screenshot registration with the disposable URL when both object id and raw URL are rejected" do
     screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
     write_file(File.join(screenshot_directory, "01-home.png"), "png-one")
+    allow_mobile_screenshot_validation_bypass
     allow(Fastlane::UI).to receive(:important)
 
     upload_url_http = http_client do |_request|
@@ -392,6 +401,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     locale_path = File.join(metadata_path, "en-US")
     write_file(File.join(locale_path, "app_name"), "Example App")
     write_file(File.join(locale_path, "screenshots", "01.png"), "png-data")
+    allow_mobile_screenshot_validation_bypass
     allow(Fastlane::UI).to receive(:important)
 
     events = []
@@ -461,9 +471,36 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     end.to raise_error(/Unsupported screenshot format for en-US: 01.gif/)
   end
 
+  it "fails fast when a locale contains more than five mobile screenshots" do
+    screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
+    6.times do |index|
+      write_file(File.join(screenshot_directory, format("%02d.png", index + 1)), "png-data")
+    end
+
+    expect(Net::HTTP).not_to(receive(:new))
+
+    expect do
+      described_class.update_app_localization_info(token, params)
+    end.to raise_error(/Huawei mobile phone screenshots for en-US must include between 3 and 5 images; got 6/)
+  end
+
+  it "fails fast when a mobile screenshot exceeds 2 MB" do
+    screenshot_directory = File.join(metadata_path, "en-US", "screenshots")
+    write_file(File.join(screenshot_directory, "01.png"), "a" * ((2 * 1024 * 1024) + 1))
+    write_file(File.join(screenshot_directory, "02.png"), "png-two")
+    write_file(File.join(screenshot_directory, "03.png"), "png-three")
+
+    expect(Net::HTTP).not_to(receive(:new))
+
+    expect do
+      described_class.update_app_localization_info(token, params)
+    end.to raise_error(/Huawei mobile phone screenshots for en-US must not exceed 2.00 MB each: 01.png \(2.00 MB\)/)
+  end
+
   it "updates screenshots for one locale without affecting locales that have no screenshot assets" do
     write_file(File.join(metadata_path, "de-DE", "app_name"), "Beispiel")
     write_file(File.join(metadata_path, "en-US", "screenshots", "01.png"), "png-data")
+    allow_mobile_screenshot_validation_bypass
     allow(Fastlane::UI).to receive(:important)
 
     events = []

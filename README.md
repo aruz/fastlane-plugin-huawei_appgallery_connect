@@ -177,6 +177,7 @@ Screenshot behavior:
 - Non-empty `screenshots` directories are uploaded in stable lexicographic filename order.
 - Provided screenshots replace the uploaded screenshots for that locale.
 - Supported screenshot extensions are `.jpg`, `.jpeg`, and `.png`.
+- The current implementation uploads screenshots as mobile phone assets, so each locale must contain between 3 and 5 screenshots and each image must be 2 MB or smaller.
 - All screenshots in a locale must share the same orientation because Huawei requires a single `imgShowType` for each screenshot update request.
 
 ## Run tests for this plugin

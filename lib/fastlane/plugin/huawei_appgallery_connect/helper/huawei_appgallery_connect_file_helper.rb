@@ -18,6 +18,9 @@ module Fastlane
       PORTRAIT_SCREENSHOT_SHOW_TYPE = 0
       LANDSCAPE_SCREENSHOT_SHOW_TYPE = 1
       MOBILE_PHONE_DEVICE_TYPE = 4
+      MIN_MOBILE_PHONE_SCREENSHOT_COUNT = 3
+      MAX_MOBILE_PHONE_SCREENSHOT_COUNT = 5
+      MAX_MOBILE_PHONE_SCREENSHOT_SIZE_BYTES = 2 * 1024 * 1024
       SUPPORTED_SCREENSHOT_EXTENSIONS = [".jpg", ".jpeg", ".png"].freeze
 
       def self.upload_app(token, client_id, app_id, apk_path, is_aab)
@@ -142,14 +145,44 @@ module Fastlane
 
       def self.validate_screenshot_paths!(lang, screenshot_paths)
         invalid_paths = screenshot_paths.reject { |path| supported_screenshot?(path) }
-        return if invalid_paths.empty?
+        unless invalid_paths.empty?
+          invalid_names = invalid_paths.map { |path| File.basename(path) }.join(", ")
+          UI.user_error!("Unsupported screenshot format for #{lang}: #{invalid_names}. Supported extensions: #{SUPPORTED_SCREENSHOT_EXTENSIONS.join(', ')}")
+        end
 
-        invalid_names = invalid_paths.map { |path| File.basename(path) }.join(", ")
-        UI.user_error!("Unsupported screenshot format for #{lang}: #{invalid_names}. Supported extensions: #{SUPPORTED_SCREENSHOT_EXTENSIONS.join(', ')}")
+        validate_mobile_phone_screenshot_count!(lang, screenshot_paths)
+        validate_mobile_phone_screenshot_sizes!(lang, screenshot_paths)
       end
 
       def self.supported_screenshot?(path)
         SUPPORTED_SCREENSHOT_EXTENSIONS.include?(File.extname(path).downcase)
+      end
+
+      def self.validate_mobile_phone_screenshot_count!(lang, screenshot_paths)
+        screenshot_count = screenshot_paths.length
+        return if screenshot_count.between?(MIN_MOBILE_PHONE_SCREENSHOT_COUNT, MAX_MOBILE_PHONE_SCREENSHOT_COUNT)
+
+        UI.user_error!(
+          "Huawei mobile phone screenshots for #{lang} must include between #{MIN_MOBILE_PHONE_SCREENSHOT_COUNT} and #{MAX_MOBILE_PHONE_SCREENSHOT_COUNT} images; got #{screenshot_count}"
+        )
+      end
+
+      def self.validate_mobile_phone_screenshot_sizes!(lang, screenshot_paths)
+        oversized_screenshots = screenshot_paths.each_with_object([]) do |path, oversized|
+          file_size = File.size(path)
+          next if file_size <= MAX_MOBILE_PHONE_SCREENSHOT_SIZE_BYTES
+
+          oversized << "#{File.basename(path)} (#{format_megabytes(file_size)})"
+        end
+        return if oversized_screenshots.empty?
+
+        UI.user_error!(
+          "Huawei mobile phone screenshots for #{lang} must not exceed #{format_megabytes(MAX_MOBILE_PHONE_SCREENSHOT_SIZE_BYTES)} each: #{oversized_screenshots.join(', ')}"
+        )
+      end
+
+      def self.format_megabytes(bytes)
+        format("%.2f MB", bytes.to_f / 1024 / 1024)
       end
 
       def self.upload_file_for_obs(token, client_id, app_id, file_path, upload_filename, suffix)
