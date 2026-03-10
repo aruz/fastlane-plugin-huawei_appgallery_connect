@@ -281,13 +281,18 @@ module Fastlane
       end
 
       def self.build_screenshot_file_payload(file_path, upload_result)
-        {
-          fileName: File.basename(file_path),
-          fileDestUrl: upload_result["fileDestUlr"] || upload_result["fileDestUrl"],
-          size: (upload_result["size"] || File.size(file_path)).to_s,
-          imageResolution: upload_result["imageResolution"].to_s,
-          imageResolutionSingature: (upload_result["imageResolutionSingature"] || upload_result["imageResolutionSignature"]).to_s
+        payload = {
+          fileName: upload_result["fileName"] || File.basename(file_path),
+          fileDestUrl: upload_result["fileDestUrl"] || upload_result["fileDestUlr"],
+          size: upload_result.key?("size") ? upload_result["size"] : File.size(file_path)
         }
+
+        payload[:imageResolution] = upload_result["imageResolution"] if upload_result.key?("imageResolution")
+
+        image_resolution_signature = upload_result["imageResolutionSignature"] || upload_result["imageResolutionSingature"]
+        payload[:imageResolutionSignature] = image_resolution_signature unless image_resolution_signature.nil?
+
+        payload
       end
 
       def self.save_app_file_info(token, client_id, app_id, file_type, files, failure_message, success_message, lang = nil)
@@ -301,6 +306,7 @@ module Fastlane
         body = { fileType: file_type, files: files }
         body[:lang] = lang if lang
         request.body = body.to_json
+        UI.important("App file info request body: #{request.body}")
 
         response = http.request(request)
         unless response.kind_of?(Net::HTTPSuccess)

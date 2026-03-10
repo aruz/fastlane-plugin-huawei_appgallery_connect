@@ -122,7 +122,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
         "fileDestUrl" => "screenshots/01.png",
         "size" => "8",
         "imageResolution" => "1080x1920",
-        "imageResolutionSingature" => "sig-1"
+        "imageResolutionSignature" => "sig-1"
       }])
 
       http_response(body: { ret: { code: 0 } }.to_json)
