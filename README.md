@@ -146,7 +146,7 @@ fastlane
             └── release_notes
 ```
 
-If you also want to update store listing screenshots, add a `screenshots` directory inside each locale folder. Screenshot files are uploaded in lexicographic filename order.
+If your locale folders contain a `screenshots` directory, this plugin uploads those images to AppGallery Connect and then updates the locale's screenshot set through `app-file-info`. A non-empty `screenshots` directory is treated as the source of truth for that locale.
 
 ```
 fastlane
@@ -174,8 +174,10 @@ Screenshot behavior:
 
 - Locale folders without a `screenshots` directory are left unchanged.
 - Empty `screenshots` directories are treated as a no-op.
+- Non-empty `screenshots` directories are uploaded in stable lexicographic filename order.
 - Provided screenshots replace the uploaded screenshots for that locale.
-- Supported screenshot formats are `.jpg`, `.jpeg`, and `.png`.
+- Supported screenshot extensions are `.jpg`, `.jpeg`, and `.png`.
+- All screenshots in a locale must share the same orientation because Huawei requires a single `imgShowType` for each screenshot update request.
 
 ## Run tests for this plugin
 

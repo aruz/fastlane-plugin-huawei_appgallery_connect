@@ -1,20 +1,21 @@
 require "fastlane_core/ui/ui"
 require "json"
 require "net/http"
-require "time"
+require "securerandom"
 require "uri"
 
 module Fastlane
   UI = FastlaneCore::UI unless Fastlane.const_defined?("UI")
 
   module Helper
-    # rubocop:disable Metrics/ClassLength
     class HuaweiAppgalleryConnectFileHelper
       DEFAULT_METADATA_PATH = "fastlane/metadata/huawei"
       SCREENSHOT_DIRECTORY_NAME = "screenshots"
       PACKAGE_FILE_TYPE = 5
       SCREENSHOT_FILE_TYPE = 2
       IMAGE_PARSE_TYPE = 1
+      PORTRAIT_SCREENSHOT_SHOW_TYPE = 0
+      LANDSCAPE_SCREENSHOT_SHOW_TYPE = 1
       SUPPORTED_SCREENSHOT_EXTENSIONS = [".jpg", ".jpeg", ".png"].freeze
 
       def self.upload_app(token, client_id, app_id, apk_path, is_aab)
@@ -93,27 +94,28 @@ module Fastlane
 
       def self.upload_locale_screenshots(token, params, lang, folder)
         screenshot_directory = File.join(folder, SCREENSHOT_DIRECTORY_NAME)
+        return unless Dir.exist?(screenshot_directory)
         screenshot_paths = Dir.glob(File.join(screenshot_directory, "*")).select { |path| File.file?(path) }.sort
         return if screenshot_paths.empty?
 
-        invalid_paths = screenshot_paths.reject { |path| supported_screenshot?(path) }
-        unless invalid_paths.empty?
-          UI.user_error!("Unsupported screenshot format for #{lang}: #{invalid_paths.map { |path| File.basename(path) }.join(', ')}. Supported extensions: #{SUPPORTED_SCREENSHOT_EXTENSIONS.join(', ')}")
-        end
-
+        validate_screenshot_paths!(lang, screenshot_paths)
         UI.important("Uploading #{screenshot_paths.length} screenshot(s) for #{lang}")
-        uploaded_files = screenshot_paths.map do |path|
+
+        uploaded_screenshots = screenshot_paths.map do |path|
           upload_result = upload_file_with_auth_code(token, params[:client_id], params[:app_id], path, IMAGE_PARSE_TYPE)
-          build_screenshot_file_payload(path, upload_result)
+          build_screenshot_upload_result(path, upload_result)
         end
 
-        save_screenshot_file_info(
+        save_app_file_info(
           token,
           params[:client_id],
           params[:app_id],
-          uploaded_files,
-          "Successfully uploaded #{uploaded_files.length} screenshot(s) for #{lang}",
-          lang
+          SCREENSHOT_FILE_TYPE,
+          build_screenshot_file_payloads(uploaded_screenshots),
+          "Cannot upload screenshot info",
+          "Successfully uploaded #{uploaded_screenshots.length} screenshot(s) for #{lang}",
+          lang: lang,
+          imgShowType: infer_img_show_type!(lang, uploaded_screenshots)
         )
       end
 
@@ -134,6 +136,14 @@ module Fastlane
         end
 
         body.keys == [:lang] ? nil : body
+      end
+
+      def self.validate_screenshot_paths!(lang, screenshot_paths)
+        invalid_paths = screenshot_paths.reject { |path| supported_screenshot?(path) }
+        return if invalid_paths.empty?
+
+        invalid_names = invalid_paths.map { |path| File.basename(path) }.join(", ")
+        UI.user_error!("Unsupported screenshot format for #{lang}: #{invalid_names}. Supported extensions: #{SUPPORTED_SCREENSHOT_EXTENSIONS.join(', ')}")
       end
 
       def self.supported_screenshot?(path)
@@ -208,13 +218,22 @@ module Fastlane
         end
 
         result_json = JSON.parse(response.body)
-        if result_json["uploadUrl"].nil? || result_json["authCode"].nil?
+        upload_url = result_json["uploadUrl"] || result_json.dig("urlInfo", "url")
+        auth_code = result_json["authCode"] || result_json.dig("urlInfo", "authCode")
+        file_dest_url = result_json["objectId"] ||
+                        result_json["fileDestUrl"] ||
+                        result_json["fileDestUlr"] ||
+                        result_json.dig("urlInfo", "objectId") ||
+                        result_json.dig("result", "UploadUrlRsp", "objectId")
+
+        if upload_url.nil? || auth_code.nil?
           UI.user_error!("Cannot obtain upload url: #{response.body}")
         end
 
         {
-          upload_url: result_json["uploadUrl"],
-          auth_code: result_json["authCode"]
+          upload_url: upload_url,
+          auth_code: auth_code,
+          file_dest_url: file_dest_url
         }
       end
 
@@ -222,7 +241,7 @@ module Fastlane
         uri = URI(upload_target[:upload_url])
         http = build_http_client(uri)
         request = Net::HTTP::Post.new(uri.request_uri)
-        boundary = "----FastlaneHuaweiAppGallery#{Time.now.to_i}#{rand(1000)}"
+        boundary = "----FastlaneHuaweiAppGallery#{SecureRandom.hex(12)}"
         request["Content-Type"] = "multipart/form-data; boundary=#{boundary}"
         request.body = build_multipart_upload_body(boundary, upload_target[:auth_code], file_path, parse_type)
         response = http.request(request)
@@ -239,7 +258,15 @@ module Fastlane
 
         UI.important("Upload file response payload: #{upload_info}")
 
-        upload_info
+        file_dest_url = upload_target[:file_dest_url] || upload_info["fileDestUrl"] || upload_info["fileDestUlr"]
+        if file_dest_url.nil?
+          UI.user_error!("Cannot determine uploaded file object ID: #{response.body}")
+        end
+
+        {
+          file_dest_url: file_dest_url,
+          image_resolution: upload_info["imageResolution"]
+        }
       end
 
       def self.build_multipart_upload_body(boundary, auth_code, file_path, parse_type = nil)
@@ -282,100 +309,47 @@ module Fastlane
         end
       end
 
-      def self.build_screenshot_file_payload(file_path, upload_result)
-        payload = {
-          fileName: upload_result["fileName"] || File.basename(file_path),
-          fileDestUrl: upload_result["fileDestUrl"] || upload_result["fileDestUlr"],
-          size: upload_result.key?("size") ? upload_result["size"] : File.size(file_path)
+      def self.build_screenshot_upload_result(file_path, upload_result)
+        {
+          file_name: File.basename(file_path),
+          file_dest_url: upload_result[:file_dest_url],
+          image_resolution: upload_result[:image_resolution]
         }
-
-        payload[:imageResolution] = upload_result["imageResolution"] if upload_result.key?("imageResolution")
-
-        image_resolution_signature = upload_result["imageResolutionSignature"] || upload_result["imageResolutionSingature"]
-        payload[:imageResolutionSingature] = image_resolution_signature unless image_resolution_signature.nil?
-
-        payload
       end
 
-      def self.save_screenshot_file_info(token, client_id, app_id, files, success_message, lang)
-        screenshot_payload_variants(files).each_with_index do |variant_files, index|
-          variant_name = screenshot_payload_variant_name(index)
-          result = save_app_file_info_request(token, client_id, app_id, SCREENSHOT_FILE_TYPE, variant_files, lang)
-
-          if result[:http_error]
-            UI.user_error!("Cannot upload screenshot info (status code: #{result[:response].code}, body: #{result[:response].body})")
-          end
-
-          if result[:success]
-            UI.success(success_message)
-            return result[:result_json]
-          end
-
-          if result[:ret_code] == 204_144_641
-            UI.important("Screenshot registration variant #{variant_name} failed signature verification, trying next payload variant")
-            next
-          end
-
-          UI.user_error!("Cannot upload screenshot info: #{result[:result_json]}")
-        end
-
-        UI.user_error!("Cannot upload screenshot info: Huawei rejected all screenshot signature payload variants")
-      end
-
-      def self.screenshot_payload_variants(files)
-        [
-          files,
-          files.map { |file| with_signature_keys(file, ["imageResolutionSingature", "imageResolutionSignature"]) },
-          files.map { |file| with_signature_keys(file, ["imageResolutionSignature"]) },
-          files.map { |file| without_signature_keys(file) }
-        ]
-      end
-
-      def self.screenshot_payload_variant_name(index)
-        case index
-        when 0
-          "typoed_signature_only"
-        when 1
-          "both_signature_keys"
-        when 2
-          "corrected_signature_only"
-        else
-          "no_signature_keys"
+      def self.build_screenshot_file_payloads(uploaded_screenshots)
+        uploaded_screenshots.map do |screenshot|
+          {
+            fileDestUrl: screenshot[:file_dest_url]
+          }
         end
       end
 
-      def self.with_signature_keys(file, keys)
-        signature_value = file[:imageResolutionSingature] || file[:imageResolutionSignature]
-        return file unless signature_value
+      def self.infer_img_show_type!(lang, uploaded_screenshots)
+        show_types = uploaded_screenshots.map do |screenshot|
+          resolution_to_show_type!(lang, screenshot[:file_name], screenshot[:image_resolution])
+        end.uniq
 
-        updated_file = without_signature_keys(file)
-        keys.each do |key|
-          updated_file[key.to_sym] = signature_value
-        end
-        updated_file
+        return show_types.first if show_types.length == 1
+
+        UI.user_error!("Screenshots for #{lang} must all use the same orientation because Huawei requires a single imgShowType per locale")
       end
 
-      def self.without_signature_keys(file)
-        file.reject do |key, _value|
-          key == :imageResolutionSingature || key == :imageResolutionSignature
+      def self.resolution_to_show_type!(lang, file_name, image_resolution)
+        match = image_resolution.to_s.match(/\A(\d+)\*(\d+)\z/)
+        unless match
+          UI.user_error!("Cannot determine screenshot orientation for #{lang}/#{file_name}: unexpected imageResolution #{image_resolution.inspect}")
         end
+
+        width = match[1].to_i
+        height = match[2].to_i
+        return PORTRAIT_SCREENSHOT_SHOW_TYPE if height > width
+        return LANDSCAPE_SCREENSHOT_SHOW_TYPE if width > height
+
+        UI.user_error!("Cannot determine screenshot orientation for #{lang}/#{file_name}: square screenshots are not supported")
       end
 
-      def self.save_app_file_info(token, client_id, app_id, file_type, files, failure_message, success_message, lang = nil)
-        result = save_app_file_info_request(token, client_id, app_id, file_type, files, lang)
-        if result[:http_error]
-          UI.user_error!("#{failure_message} (status code: #{result[:response].code}, body: #{result[:response].body})")
-        end
-
-        if result[:success]
-          UI.success(success_message)
-          result[:result_json]
-        else
-          UI.user_error!("#{failure_message}: #{result[:result_json]}")
-        end
-      end
-
-      def self.save_app_file_info_request(token, client_id, app_id, file_type, files, lang = nil)
+      def self.save_app_file_info(token, client_id, app_id, file_type, files, failure_message, success_message, **additional_body)
         uri = URI.parse("https://connect-api.cloud.huawei.com/api/publish/v2/app-file-info?appId=#{app_id}")
         http = build_http_client(uri)
         request = Net::HTTP::Put.new(uri.request_uri)
@@ -383,22 +357,22 @@ module Fastlane
         request["Authorization"] = "Bearer #{token}"
         request["Content-Type"] = "application/json"
 
-        body = { fileType: file_type, files: files }
-        body[:lang] = lang if lang
+        body = { fileType: file_type, files: files }.merge(additional_body.reject { |_key, value| value.nil? })
         request.body = body.to_json
         UI.important("App file info request body: #{request.body}")
 
         response = http.request(request)
-        return { http_error: true, response: response } unless response.kind_of?(Net::HTTPSuccess)
+        unless response.kind_of?(Net::HTTPSuccess)
+          UI.user_error!("#{failure_message} (status code: #{response.code}, body: #{response.body})")
+        end
 
         result_json = JSON.parse(response.body)
-        {
-          http_error: false,
-          response: response,
-          result_json: result_json,
-          ret_code: result_json["ret"]["code"],
-          success: result_json["ret"]["code"] == 0
-        }
+        if result_json["ret"]["code"] == 0
+          UI.success(success_message)
+          result_json
+        else
+          UI.user_error!("#{failure_message}: #{result_json}")
+        end
       end
 
       def self.build_http_client(uri)
@@ -407,6 +381,5 @@ module Fastlane
         http
       end
     end
-    # rubocop:enable Metrics/ClassLength
   end
 end
