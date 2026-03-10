@@ -106,7 +106,7 @@ huawei_appgallery_connect_get_app_info(
 )
 ```
 
-To update the app's metadata like release notes, app name, brief info and app description you can make use of the following action
+To update the app's metadata like release notes, app name, brief info, app description, and locale-specific screenshots you can make use of the following action
 
 ```ruby
 huawei_appgallery_connect_update_app_localization(
@@ -146,6 +146,37 @@ fastlane
             └── release_notes
 ```
 
+If you also want to update store listing screenshots, add a `screenshots` directory inside each locale folder. Screenshot files are uploaded in lexicographic filename order.
+
+```
+fastlane
+└── metadata
+    └── huawei
+        ├── en-US
+        │   ├── app_name
+        │   ├── app_description
+        │   ├── introduction
+        │   ├── release_notes
+        │   └── screenshots
+        │       ├── 01-home.png
+        │       └── 02-details.png
+        └── zh-CN
+            ├── app_name
+            ├── app_description
+            ├── introduction
+            ├── release_notes
+            └── screenshots
+                ├── 01-home.png
+                └── 02-details.png
+```
+
+Screenshot behavior:
+
+- Locale folders without a `screenshots` directory are left unchanged.
+- Empty `screenshots` directories are treated as a no-op.
+- Provided screenshots replace the uploaded screenshots for that locale.
+- Supported screenshot formats are `.jpg`, `.jpeg`, and `.png`.
+
 ## Run tests for this plugin
 
 To run both the tests, and code style validation, run
@@ -174,4 +205,3 @@ For more information about how the `fastlane` plugin system works, check out the
 ## About _fastlane_
 
 _fastlane_ is the easiest way to automate beta deployments and releases for your iOS and Android apps. To learn more, check out [fastlane.tools](https://fastlane.tools).
-

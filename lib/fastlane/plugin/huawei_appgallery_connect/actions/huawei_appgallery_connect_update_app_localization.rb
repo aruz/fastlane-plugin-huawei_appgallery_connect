@@ -50,7 +50,7 @@ module Fastlane
 
           FastlaneCore::ConfigItem.new(key: :metadata_path,
                                        env_name: 'HUAWEI_APPGALLERY_CONNECT_METADATA_PATH',
-                                       description: 'Huawei Appgallery Connect Metadata Path. Default is fastalane/metadata/huawei',
+                                       description: 'Huawei Appgallery Connect metadata path. Default is fastlane/metadata/huawei. Locale folders may also include screenshots/',
                                        optional: true,
                                        type: String)
         ]
