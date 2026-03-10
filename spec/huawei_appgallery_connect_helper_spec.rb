@@ -160,7 +160,8 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
           { "fileDestUrl" => "object-2" }
         ],
         "lang" => "en-US",
-        "imgShowType" => 0
+        "imgShowType" => 0,
+        "deviceType" => 4
       )
 
       success_response
@@ -273,7 +274,8 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
       expect(JSON.parse(request.body)).to include(
         "fileType" => 2,
         "lang" => "en-US",
-        "imgShowType" => 0
+        "imgShowType" => 0,
+        "deviceType" => 4
       )
       success_response
     end
@@ -342,6 +344,7 @@ describe Fastlane::Helper::HuaweiAppgalleryConnectHelper do
     register_http = http_client do |request|
       events << "register:en-US"
       expect(JSON.parse(request.body)).to include("lang" => "en-US", "imgShowType" => 0)
+      expect(JSON.parse(request.body)).to include("deviceType" => 4)
       success_response
     end
 

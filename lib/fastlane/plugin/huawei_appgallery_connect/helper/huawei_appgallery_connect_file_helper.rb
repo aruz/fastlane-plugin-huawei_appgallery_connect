@@ -16,6 +16,7 @@ module Fastlane
       IMAGE_PARSE_TYPE = 1
       PORTRAIT_SCREENSHOT_SHOW_TYPE = 0
       LANDSCAPE_SCREENSHOT_SHOW_TYPE = 1
+      MOBILE_PHONE_DEVICE_TYPE = 4
       SUPPORTED_SCREENSHOT_EXTENSIONS = [".jpg", ".jpeg", ".png"].freeze
 
       def self.upload_app(token, client_id, app_id, apk_path, is_aab)
@@ -115,7 +116,8 @@ module Fastlane
           "Cannot upload screenshot info",
           "Successfully uploaded #{uploaded_screenshots.length} screenshot(s) for #{lang}",
           lang: lang,
-          imgShowType: infer_img_show_type!(lang, uploaded_screenshots)
+          imgShowType: infer_img_show_type!(lang, uploaded_screenshots),
+          deviceType: MOBILE_PHONE_DEVICE_TYPE
         )
       end
 
