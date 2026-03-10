@@ -8,6 +8,7 @@ module Fastlane
   UI = FastlaneCore::UI unless Fastlane.const_defined?("UI")
 
   module Helper
+    # rubocop:disable Metrics/ClassLength
     class HuaweiAppgalleryConnectFileHelper
       DEFAULT_METADATA_PATH = "fastlane/metadata/huawei"
       SCREENSHOT_DIRECTORY_NAME = "screenshots"
@@ -220,13 +221,16 @@ module Fastlane
         end
 
         result_json = JSON.parse(response.body)
+        UI.important("Upload URL response payload: #{result_json}")
         upload_url = result_json["uploadUrl"] || result_json.dig("urlInfo", "url")
         auth_code = result_json["authCode"] || result_json.dig("urlInfo", "authCode")
-        file_dest_url = result_json["objectId"] ||
-                        result_json["fileDestUrl"] ||
-                        result_json["fileDestUlr"] ||
-                        result_json.dig("urlInfo", "objectId") ||
-                        result_json.dig("result", "UploadUrlRsp", "objectId")
+        file_dest_url = normalize_file_dest_url(
+          result_json["objectId"] ||
+          result_json["fileDestUrl"] ||
+          result_json["fileDestUlr"] ||
+          result_json.dig("urlInfo", "objectId") ||
+          result_json.dig("result", "UploadUrlRsp", "objectId")
+        )
 
         if upload_url.nil? || auth_code.nil?
           UI.user_error!("Cannot obtain upload url: #{response.body}")
@@ -260,7 +264,8 @@ module Fastlane
 
         UI.important("Upload file response payload: #{upload_info}")
 
-        file_dest_url = upload_target[:file_dest_url] || upload_info["fileDestUrl"] || upload_info["fileDestUlr"]
+        file_dest_url = upload_target[:file_dest_url] ||
+                        normalize_file_dest_url(upload_info["fileDestUrl"] || upload_info["fileDestUlr"])
         if file_dest_url.nil?
           UI.user_error!("Cannot determine uploaded file object ID: #{response.body}")
         end
@@ -327,6 +332,25 @@ module Fastlane
         end
       end
 
+      def self.normalize_file_dest_url(file_dest_url)
+        return nil if file_dest_url.nil?
+
+        value = file_dest_url.to_s
+        return value if value.empty?
+
+        begin
+          uri = URI.parse(value)
+        rescue URI::InvalidURIError
+          return value
+        end
+
+        return value if uri.scheme.nil? || uri.host.nil?
+
+        path = uri.path.to_s
+        normalized_value = path.sub(%r{\A/FileServer/getFile/}, "")
+        normalized_value.empty? ? value : normalized_value
+      end
+
       def self.infer_img_show_type!(lang, uploaded_screenshots)
         show_types = uploaded_screenshots.map do |screenshot|
           resolution_to_show_type!(lang, screenshot[:file_name], screenshot[:image_resolution])
@@ -383,5 +407,6 @@ module Fastlane
         http
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end
